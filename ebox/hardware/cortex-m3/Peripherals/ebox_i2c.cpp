@@ -51,34 +51,37 @@ mcuI2c::mcuI2c(I2C_TypeDef *I2Cx, Gpio *scl_pin, Gpio *sda_pin)
  *@param    speed:  速率 10,100，200,400 分别代表10k，100k,200k，400k
  *@retval   None
 */
-void  mcuI2c::begin(uint16_t speed)
+void  mcuI2c::begin(I2c::Config_t *newConfig)
 {
     rcc_clock_cmd((uint32_t)_i2cx, ENABLE);
 
     _sda->mode(AF_OD);
     _scl->mode(AF_OD);
-    switch (speed)
-    {
-    case 10:
-        config(10000);
-        break;
-    case 100:
-        config(100000);
-        break;
-    case 200:
-        config(200000);
-        break;
-    case 400:
-        config(400000);
-        break;
-    default:
-        config(200000);
-    }
+    config(newConfig);
 }
 
-void mcuI2c::config(uint32_t speed)
+void mcuI2c::config(I2c::Config_t *newConfig)
 {
-    _timing = speed;
+    this->cfg = newConfig;
+   switch (cfg->speed)
+    {
+    case K10:
+        _timing = (10000);
+        break;
+    case K100:
+        _timing = (100000);
+        break;
+    case K200:
+        _timing = (200000);
+        break;
+    case K400:
+        _timing = (400000);
+        break;
+    default:
+        _timing = (200000);
+    }
+
+
     I2C_InitTypeDef  I2C_InitStructure;
 
     /* I2C configuration */
@@ -95,11 +98,6 @@ void mcuI2c::config(uint32_t speed)
     I2C_Init(_i2cx, &I2C_InitStructure);
 }
 
-uint32_t mcuI2c::read_config()
-{
-    return _timing;
-}
-
 /**
   *@brief    I2C写入一个字节. start->data->stop
   *@param    uint8_t slaveAddr:  从机地址
@@ -107,7 +105,7 @@ uint32_t mcuI2c::read_config()
   *          uint16_t timeout: 超时
   *@retval   状态 EOK 成功； EWAIT 超时
   */
-uint8_t mcuI2c::write(uint8_t slaveAddr, uint8_t data)
+uint8_t mcuI2c::write(uint16_t slaveAddr,uint8_t data)
 {
     uint8_t err = EOK;
     I2C_DEBUG("I2C state sr2 = %d, sr1 = %d \r\n", _i2cx->SR2, _i2cx->SR1);
@@ -118,24 +116,6 @@ uint8_t mcuI2c::write(uint8_t slaveAddr, uint8_t data)
     return err;
 }
 
-/**
-  *@brief    指定位置写入一个字节. start->data->stop
-  *@param    uint8_t slaveAddr:  从机地址
-  *          uint8_t data:  要写入的数据
-  *          uint16_t timeout: 超时
-  *@retval   状态 EOK 成功； EWAIT 超时
-  */
-uint8_t mcuI2c::write(uint8_t slaveAddr, uint8_t regAddr, uint8_t data)
-{
-    uint8_t err = EOK;
-    I2C_DEBUG("I2C state sr2 = %d, sr1 = %d \r\n", _i2cx->SR2, _i2cx->SR1);
-    err += _start();
-    err += _send7bitsAddress(slaveAddr, WRITE);
-    err += _sendByte(regAddr);
-    err += _sendByte(data);
-    _stop();
-    return err;
-}
 
 /**
   *@brief    指定位置写入一个字节. start->data->stop
@@ -144,13 +124,14 @@ uint8_t mcuI2c::write(uint8_t slaveAddr, uint8_t regAddr, uint8_t data)
   *          uint16_t timeout: 超时
   *@retval   状态 EOK 成功； EWAIT 超时
   */
-uint8_t mcuI2c::write(uint8_t slaveAddr, uint16_t regAddr, uint8_t data)
+uint8_t mcuI2c::write(uint16_t slaveAddr,uint16_t regAddr, uint8_t data)
 {
     uint8_t err = EOK;
     I2C_DEBUG("I2C state sr2 = %d, sr1 = %d \r\n", _i2cx->SR2, _i2cx->SR1);
     err += _start();
     err += _send7bitsAddress(slaveAddr, WRITE);
-	err += _sendByte(regAddr>>8);
+    if(cfg->regAddrBits == BIT16)
+        err += _sendByte(regAddr>>8);
     err += _sendByte(regAddr);
     err += _sendByte(data);
     _stop();
@@ -165,7 +146,7 @@ uint8_t mcuI2c::write(uint8_t slaveAddr, uint16_t regAddr, uint8_t data)
   *          uint16_t timeout:  超时
   *@retval   状态 EOK 成功； EWAIT 超时
   */
-uint8_t mcuI2c::write_buf(uint8_t slaveAddr, uint8_t *data, uint16_t nWrite)
+uint8_t mcuI2c::write_buf(uint16_t slaveAddr,uint8_t *data, uint16_t nWrite)
 {
     uint8_t err = 0;
     err += _start();
@@ -179,29 +160,7 @@ uint8_t mcuI2c::write_buf(uint8_t slaveAddr, uint8_t *data, uint16_t nWrite)
     return err;
 }
 
-/**
-  *@brief    在指定寄存器连续写 start->regAddr->data....->stop
-  *@param    uint8_t slaveAddr:  从机地址
-  *          uint8_t regAddr：要写入的寄存器地址
-  *          uint8_t *data:  要写入的数据
-  *          uint16_t nWrite  要写入的数据长度
-  *          uint16_t timeout:  超时
-  *@retval   状态 EOK 成功； EWAIT 超时
-  */
-uint8_t mcuI2c::write_buf(uint8_t slaveAddr, uint8_t regAddr, uint8_t *data, uint16_t nWrite)
-{
-    uint8_t err = 0;
-    err += _start();
-    err += _send7bitsAddress(slaveAddr, WRITE);
-    err += _sendByte(regAddr);
-    while (nWrite--)
-    {
-        err += _sendByte(*data);
-        data++;
-    }
-    _stop();
-    return err;
-}
+
 
 /**
   *@brief    在指定寄存器连续写 start->regAddr->data....->stop
@@ -212,13 +171,15 @@ uint8_t mcuI2c::write_buf(uint8_t slaveAddr, uint8_t regAddr, uint8_t *data, uin
   *          uint16_t timeout:  超时
   *@retval   状态 EOK 成功； EWAIT 超时
   */
-uint8_t mcuI2c::write_buf(uint8_t slaveAddr, uint16_t regAddr, uint8_t *data, uint16_t nWrite)
+uint8_t mcuI2c::write_buf(uint16_t slaveAddr,uint16_t regAddr, uint8_t *data, uint16_t nWrite)
 {
     uint8_t err = 0;
     err += _start();
     err += _send7bitsAddress(slaveAddr, WRITE);
-	err += _sendByte(regAddr>>8);
+    if(cfg->regAddrBits == BIT16)
+        err += _sendByte(regAddr>>8);
     err += _sendByte(regAddr);
+    
     while (nWrite--)
     {
         err += _sendByte(*data);
@@ -234,7 +195,7 @@ uint8_t mcuI2c::write_buf(uint8_t slaveAddr, uint16_t regAddr, uint8_t *data, ui
   *          uint16_t timeout: 超时
   *@retval   读取到的数据
   */
-uint8_t mcuI2c::read(uint8_t slaveAddr)
+uint8_t mcuI2c::read(uint16_t slaveAddr)
 {
     uint8_t data ;
     _start();
@@ -246,27 +207,6 @@ uint8_t mcuI2c::read(uint8_t slaveAddr)
     return data;
 }
 
-/**
-  *@brief    读指定寄存器. start->WslaveAddr->regAddr->RslaveAddr->Nack->stop->data
-  *@param    uint8_t slaveAddr:  从机地址
-  *          uint8_t regAddr：   要读取的寄存器
-  *          uint16_t timeout: 超时
-  *@retval   读取到的数据
-  */
-uint8_t mcuI2c::read(uint8_t slaveAddr, uint8_t regAddr)
-{
-    uint8_t data ;
-    _start();
-    _send7bitsAddress(slaveAddr, WRITE);
-    _sendByte(regAddr);
-    _start();
-    _send7bitsAddress(slaveAddr, READ);
-    _sendNack();
-    _stop();
-    _receiveByte(&data);
-    _sendAck();
-    return data;
-}
 
 /**
   *@brief    读指定寄存器. start->WslaveAddr->regAddr->RslaveAddr->Nack->stop->data
@@ -275,7 +215,7 @@ uint8_t mcuI2c::read(uint8_t slaveAddr, uint8_t regAddr)
   *          uint16_t timeout: 超时
   *@retval   读取到的数据
   */
-uint8_t mcuI2c::read(uint8_t slaveAddr, uint16_t regAddr)
+uint8_t mcuI2c::read(uint16_t slaveAddr,uint16_t regAddr)
 {
     uint8_t data ;
     _start();
@@ -283,7 +223,9 @@ uint8_t mcuI2c::read(uint8_t slaveAddr, uint16_t regAddr)
     _sendByte(regAddr);
     _start();
     _send7bitsAddress(slaveAddr, READ);
-	_send7bitsAddress(slaveAddr>>8, READ);
+    if(cfg->regAddrBits == BIT16)
+        _sendByte(regAddr>>8);
+    _sendByte(regAddr);
     _sendNack();
     _stop();
     _receiveByte(&data);
@@ -299,7 +241,7 @@ uint8_t mcuI2c::read(uint8_t slaveAddr, uint16_t regAddr)
   *          uint16_t timeout: 超时
   *@retval   EOK，EWAIT
   */
-uint8_t mcuI2c::read_buf(uint8_t slaveAddr, uint8_t *data, uint16_t nRead)
+uint8_t mcuI2c::read_buf(uint16_t slaveAddr,uint8_t *data, uint16_t nRead)
 {
     uint8_t err = 0;
     err += _start();
@@ -318,36 +260,6 @@ uint8_t mcuI2c::read_buf(uint8_t slaveAddr, uint8_t *data, uint16_t nRead)
     return err;
 }
 
-/**
-  *@brief    指定寄存器连续读取. start->WslaveAddr->regAddr->RSlaverAddr->data...->nRead==1->Nack->stop->data
-  *@param    uint8_t slaveAddr:  从机地址
-  *          uint8_t regAddr: 寄存器地址
-  *          uint8_t *data: 读取到的数据
-  *          uint16_t nRead：要读取的数据长度
-  *          uint16_t timeout: 超时
-  *@retval   EOK，EWAIT
-  */
-uint8_t mcuI2c::read_buf(uint8_t slaveAddr, uint8_t regAddr, uint8_t *data, uint16_t nRead)
-{
-    uint8_t err = 0;
-    err += _start();
-    err += _send7bitsAddress(slaveAddr, WRITE);
-    err += _sendByte(regAddr);
-    err += _start();
-    err += _send7bitsAddress(slaveAddr, READ);
-    while (nRead--)
-    {
-        if (nRead == 0)
-        {
-            _sendNack();
-            _stop();
-        }
-        err += _receiveByte(data);
-        data++;
-    }
-    _sendAck();
-    return err;
-}
 
 /**
   *@brief    指定寄存器连续读取. start->WslaveAddr->regAddr->RSlaverAddr->data...->nRead==1->Nack->stop->data
@@ -358,12 +270,13 @@ uint8_t mcuI2c::read_buf(uint8_t slaveAddr, uint8_t regAddr, uint8_t *data, uint
   *          uint16_t timeout: 超时
   *@retval   EOK，EWAIT
   */
-uint8_t mcuI2c::read_buf(uint8_t slaveAddr, uint16_t regAddr, uint8_t *data, uint16_t nRead)
+uint8_t mcuI2c::read_buf(uint16_t slaveAddr,uint16_t regAddr, uint8_t *data, uint16_t nRead)
 {
     uint8_t err = 0;
     err += _start();
     err += _send7bitsAddress(slaveAddr, WRITE);
-    err += _sendByte(regAddr>>8);
+    if(cfg->regAddrBits == BIT16)
+        err += _sendByte(regAddr>>8);
     err += _sendByte(regAddr);
     err += _start();
     err += _send7bitsAddress(slaveAddr, READ);
@@ -386,7 +299,7 @@ uint8_t mcuI2c::read_buf(uint8_t slaveAddr, uint16_t regAddr, uint8_t *data, uin
   *@param    slaveAddr:  设备地址
   *@retval   uint8_t: EOK,EWAIT
   */
-uint8_t mcuI2c:: check_busy(uint8_t slaveAddr)
+uint8_t mcuI2c:: check_busy(uint16_t slaveAddr)
 {
     uint32_t end = GetEndTime(timeout);
 
@@ -418,7 +331,7 @@ uint8_t mcuI2c:: check_busy(uint8_t slaveAddr)
   *@param    timing:  时钟时序，通过readConfig获取
   *@retval   uint8_t: EOK,E_BUSY
   */
-uint8_t mcuI2c::take(uint32_t timing)
+uint8_t mcuI2c::take(Config_t *newConfig)
 {
     uint32_t end = GetEndTime(timeout);
 
@@ -427,7 +340,9 @@ uint8_t mcuI2c::take(uint32_t timing)
         delay_ms(1);
         if (IsTimeOut(end, timeout)) return EWAIT;
     }
-    if (_timing != timing) config(timing);
+    cfg->regAddrBits = newConfig->regAddrBits;
+    if (cfg->speed !=  newConfig->speed) config(newConfig);
+    
     _busy = 1;
     return EOK;
 }
@@ -493,6 +408,7 @@ int8_t mcuI2c::_sendByte(uint8_t data)
     }
     return EOK;
 }
+
 int8_t mcuI2c::_send7bitsAddress(uint8_t slaveAddr, uint8_t WR)
 {
     uint32_t end = GetEndTime(timeout);

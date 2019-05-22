@@ -36,11 +36,14 @@
 class At24c02
 {
 public:
-    At24c02(I2c *i2c)
+    At24c02(I2c *i2c,uint16_t slaveAddr)
     {
         this->i2c = i2c;
+        this->slaveAddr = slaveAddr;
+        cfg.regAddrBits = I2c::BIT8;
+        cfg.speed = I2c::K100;
     }
-    void begin(uint32_t speed);
+    void begin();
 
     int8_t write_byte(uint8_t byte_addr, uint8_t byte);
     int8_t write_byte(uint8_t byte_addr, uint8_t *buf, uint16_t num_to_write);
@@ -51,7 +54,8 @@ public:
     int8_t write_page(uint8_t *buf, uint8_t addr, uint8_t num_to_write);
 private:
     I2c *i2c;
-    uint32_t _timing;
+    I2c::Config_t cfg;
+    uint16_t slaveAddr;
 };
 
 #endif

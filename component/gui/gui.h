@@ -97,6 +97,12 @@ extern const GUI_FONT GUI_Font32_ASCII;
 extern const GUI_FONT GUI_FontHZ16X16;
 
 
+typedef enum{
+    FONT_INNER,
+    FONT_ONLY_HZ_EXTERN,
+    FONT_ONLY_ASCII_EXTERN,
+    FONT_ALL_EXTERN
+}FontSelect_t;
 
 #ifndef _swap_int16_t
 #define _swap_int16_t(a, b) { int16_t t = a; a = b; b = t; }
@@ -105,6 +111,33 @@ extern const GUI_FONT GUI_FontHZ16X16;
 /*************************************
  * GUI API
 *************************************/
+
+class GuiSideBar
+{
+
+        
+    public:
+        GuiSideBar(int16_t x,int16_t y,int16_t bar_len,int16_t bar_width)
+        {
+            this->x = x;
+            this->y = y;
+            this->len = bar_len;
+            this->width = bar_width;
+            
+            orientation = 0;
+        }
+    
+        int16_t x;
+        int16_t y;
+        int16_t len;
+        int16_t width;
+    
+        bool orientation;
+        uint16_t slider_len;
+        int max;
+        int prograss;
+};
+
 class GUI
 {
 private:
@@ -119,15 +152,26 @@ private:
 
     //字体相关设置
     GUI_FONT *current_font;
+    FontSelect_t font_select;
     uint8_t  text_mode;
     uint8_t  text_style;
     uint8_t  text_auto_reline;
-
+    //外部字库的传入接口
+    eBoxCharInfo_t char_info;
+    uint8_t text_extern_font_ascii_id;
+    uint8_t text_extern_font_hz_id;
+    
+    bool text_font_ascii_extern_enable;
+    bool text_font_hz_extern_enable;
 
 public:
 
+    void attach( bool (*api)(uint16_t inner_code,uint8_t font_id,eBoxCharInfo_t *info));
     void begin(Vhmi *_lcd, uint16_t w, uint16_t h);
 
+    //fun
+    void clear();
+    void flush();
     //settings
     void        set_rotation(uint8_t value);
     int16_t     ro_x(int16_t x, int16_t y);
@@ -147,6 +191,7 @@ public:
     void draw_line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint32_t color);
     void draw_rect(int16_t x, int16_t y, int16_t x1, int16_t y1);
     void fill_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
+    void fill_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1,uint32_t color);
     void fill_screen(uint32_t color) ;
 
     //graphic
@@ -166,11 +211,15 @@ public:
 
     //text
     //设置字体
-    void set_font(const GUI_FONT *font);
-    void set_text_style(uint8_t style);
-    void set_text_mode(uint8_t mode);
+    void set_font_select(FontSelect_t select);//设置字库选择
+    void set_font(const GUI_FONT *font);//设置内部字库
+    void set_font_ascii_extern(uint8_t font_id);//设置外部ASCII字库
+    void set_font_hz_extern(uint8_t font_id);//设置外部汉子字库
+    eBoxCharInfo_t get_extern_char_info(){return char_info;};
+    void set_text_style(uint8_t style);//无效
+    void set_text_mode(uint8_t mode);//设置填充模式
     void set_text_auto_reline(uint8_t enable);
-
+    
     //解码转换,打印字符等函数
     void char_index_of_font(uint16_t code, const GUI_FONT_PROP **font_list, uint16_t *index);
     void disp_index(const GUI_FONT_PROP *font_list, uint16_t index);
@@ -192,7 +241,8 @@ public:
     void drawBitmap(int16_t x, int16_t y, uint8_t *bitmap, int16_t w, int16_t h, uint32_t color, uint16_t bg) ;
     void drawXBitmap(int16_t x, int16_t y, const uint8_t *bitmap, int16_t w, int16_t h, uint32_t color) ;
 
-
+    void draw_sidebar(GuiSideBar &bar);
 };
+
 
 #endif

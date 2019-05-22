@@ -24,42 +24,53 @@
 #define __EVENTIO_H
 
 #include "ebox_core.h"
+#include "eventManager.h"
 
-class EventIo
-{
-
-public:
-    EventIo() {};
-    virtual void process(void) = 0;
-
-} ;
 
 template <class T>
-class EventVar : public EventIo
+class EventVar : public Event
 {
 public:
-    EventVar(void (*pos_edge)(), void (*nag_edge)(), void (*changed)())
+    EventVar(T *var,String name = "null")
     {
+        this->var = var;
+        state = *var;
+        event_pos_edge = NULL;
+        event_nag_edge = NULL;
+        event_changed = NULL;
+        this->name = name;
+    }
 
-        event_pos_edge = pos_edge;
-        event_nag_edge = nag_edge;
-        event_changed = changed;
-    }
-    void begin(T *io)
+    virtual void loop(void)
     {
-        this->io = io;
-        state = *io;
+        if(*var != state)
+        {
+            if(event_changed != NULL)
+                event_changed(this);
+            
+            if(*var <= state){
+                if(event_nag_edge != NULL)
+                    event_nag_edge(this);
+            }
+            else{
+                if(event_pos_edge != NULL)
+                    event_pos_edge(this);
+            }
+            state = *var;
+        }
     }
-    virtual void process(void) ;
-    void (*event_pos_edge)();
-    void (*event_nag_edge)();
-    void (*event_changed)();
+    
+public:
+    void (*event_pos_edge)(Object *sender);
+    void (*event_nag_edge)(Object *sender);
+    void (*event_changed)(Object *sender);
+    T *var;
 private:
-    T *io;
     T state;
 
 
 };
+typedef EventVar<uint8_t>   EventVarUint8;
 
 
 #endif

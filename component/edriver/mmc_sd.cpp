@@ -9,9 +9,9 @@ int SD::begin(uint8_t dev_num)
 {
     int ret = 0;
     SPIDevSDCard.dev_num = dev_num;
-    SPIDevSDCard.mode = SPI_MODE0;
-    SPIDevSDCard.prescaler = SPI_CLOCK_DIV2;
-    SPIDevSDCard.bit_order = MSB_FIRST;
+    SPIDevSDCard.mode = Spi::MODE0;
+    SPIDevSDCard.prescaler = Spi::DIV2;
+    SPIDevSDCard.bit_order = Spi::MSB;
 
     cs->mode(OUTPUT_PP);
     cs->set();
@@ -138,7 +138,7 @@ uint8_t SD::init()
     uint16_t retry = 0;  // 用来进行超时计数
     uint8_t buff[6];
 
-    SPIDevSDCard.prescaler = SPI_CLOCK_DIV256;
+    SPIDevSDCard.prescaler = Spi::DIV256;
     spi->begin(&SPIDevSDCard);
     cs->reset();
     // 纯延时，等待SD卡上电完成
@@ -213,7 +213,7 @@ uint8_t SD::init()
         }
         //----------MMC卡额外初始化操作结束------------
         //设置SPI为高速模式
-        SPIDevSDCard.prescaler = SPI_CLOCK_DIV2;
+        SPIDevSDCard.prescaler = Spi::DIV2;
         spi->config(&SPIDevSDCard);
 
         spi->write(0xFF);
@@ -271,7 +271,7 @@ uint8_t SD::init()
         else SD_Type = SD_TYPE_V2;
         //-----------鉴别SD2.0卡版本结束-----------
         //设置SPI为高速模式
-        SPIDevSDCard.prescaler = SPI_CLOCK_DIV2;
+        SPIDevSDCard.prescaler = Spi::DIV2;
         spi->config(&SPIDevSDCard);
 
         // }
@@ -316,7 +316,7 @@ int SD::_receive_data(uint8_t *data, uint16_t len, uint8_t release)
     //      data++;
     //    }
     //速度优化
-    spi->read(data, len);
+    spi->read_buf(data, len);
     //下面是2个伪CRC（dummy CRC）
     spi->write(0xFF);
     spi->write(0xFF);
@@ -343,14 +343,14 @@ int SD::get_CID(uint8_t *cid_data)
 {
     uint8_t r1;
 
-    spi->take_spi_right(&SPIDevSDCard);
+    spi->take(&SPIDevSDCard);
 
     //发CMD10命令，读CID
     r1 = _send_command(CMD10, 0, 0xFF);
     if(r1 != 0x00)return r1;  //没返回正确应答，则退出，报错
     //接收16个字节的数据
     _receive_data(cid_data, 16, RELEASE);
-    spi->release_spi_right();
+    spi->release();
     return 0;
 }
 /*******************************************************************************
@@ -367,13 +367,13 @@ int SD::get_CSD(uint8_t *csd_data)
 {
     uint8_t r1;
 
-    spi->take_spi_right(&SPIDevSDCard);
+    spi->take(&SPIDevSDCard);
     //发CMD9命令，读CSD
     r1 = _send_command(CMD9, 0, 0xFF);
     if(r1 != 0x00)return r1;  //没返回正确应答，则退出，报错
     //接收16个字节的数据
     _receive_data(csd_data, 16, RELEASE);
-    spi->release_spi_right();
+    spi->release();
 
     return 0;
 }
@@ -392,7 +392,7 @@ uint64_t SD::get_capacity(void)
     uint8_t r1;
     uint16_t i;
     uint16_t temp;
-    spi->take_spi_right(&SPIDevSDCard);
+    spi->take(&SPIDevSDCard);
 
     //取CSD信息，如果期间出错，返回0
     if(get_CSD(csd) != 0) return 0;
@@ -437,7 +437,7 @@ uint64_t SD::get_capacity(void)
         Capacity *= (uint32_t)temp;//字节为单位
     }
 
-    spi->release_spi_right();
+    spi->release();
 
     return (uint64_t)Capacity;
 }
@@ -456,8 +456,8 @@ uint8_t SD::read_single_block(uint32_t sector, uint8_t *buffer)
     uint8_t r1;
 
     //设置为高速模式
-    SPIDevSDCard.prescaler = SPI_CLOCK_DIV2;
-    spi->take_spi_right(&SPIDevSDCard);
+    SPIDevSDCard.prescaler = Spi::DIV2;
+    spi->take(&SPIDevSDCard);
 
     if(SD_Type != SD_TYPE_V2HC)
         //如果不是SDHC，将sector地址转成byte地址
@@ -468,7 +468,7 @@ uint8_t SD::read_single_block(uint32_t sector, uint8_t *buffer)
     if(r1 != 0x00)return r1;
     r1 = _receive_data(buffer, 512, RELEASE);
 
-    spi->release_spi_right();
+    spi->release();
 
     if(r1 != 0)
         return r1;   //读数据出错！
@@ -491,8 +491,8 @@ uint8_t SD::write_single_block(uint32_t sector, const  uint8_t *data)
     //  uint16_t i;
     uint32_t retry;
     //设置为高速模式
-    SPIDevSDCard.prescaler = SPI_CLOCK_DIV2;
-    spi->take_spi_right(&SPIDevSDCard);
+    SPIDevSDCard.prescaler = Spi::DIV2;
+    spi->take(&SPIDevSDCard);
 
     //如果不是SDHC，给定的是sector地址，将其转换成byte地址
     if(SD_Type != SD_TYPE_V2HC)
@@ -521,7 +521,7 @@ uint8_t SD::write_single_block(uint32_t sector, const  uint8_t *data)
     //     spi->write(*data++);
     //  }
     //速度优化
-    spi->write((uint8_t *)data, 512);
+    spi->write_buf((uint8_t *)data, 512);
     //发2个Byte的dummy CRC
     spi->write(0xff);
     spi->write(0xff);
@@ -550,7 +550,7 @@ uint8_t SD::write_single_block(uint32_t sector, const  uint8_t *data)
     cs->set();
     spi->write(0xff);
 
-    spi->release_spi_right();
+    spi->release();
 
 
     return 0;
@@ -570,8 +570,8 @@ uint8_t SD::read_multi_block(uint32_t sector, uint8_t *buffer, uint8_t count)
 {
     uint8_t r1;
 
-    SPIDevSDCard.prescaler = SPI_CLOCK_DIV2;
-    spi->take_spi_right(&SPIDevSDCard);
+    SPIDevSDCard.prescaler = Spi::DIV2;
+    spi->take(&SPIDevSDCard);
 
     if(SD_Type != SD_TYPE_V2HC)
         sector = sector << 9; //如果不是SDHC，将sector地址转成byte地址
@@ -594,7 +594,7 @@ uint8_t SD::read_multi_block(uint32_t sector, uint8_t *buffer, uint8_t count)
     cs->set();
     spi->write(0xFF);
 
-    spi->release_spi_right();
+    spi->release();
 
     if(count != 0)
         return count;   //如果没有传完，返回剩余个数
@@ -617,8 +617,8 @@ uint8_t SD::write_multi_block(uint32_t sector,  const uint8_t *data, uint8_t cou
     uint8_t r1;
     //  uint16_t i;
 
-    SPIDevSDCard.prescaler = SPI_CLOCK_DIV2;
-    spi->take_spi_right(&SPIDevSDCard);
+    SPIDevSDCard.prescaler = Spi::DIV2;
+    spi->take(&SPIDevSDCard);
 
 
     if(SD_Type != SD_TYPE_V2HC)
@@ -641,7 +641,7 @@ uint8_t SD::write_multi_block(uint32_t sector,  const uint8_t *data, uint8_t cou
         //        spi->write(*data++);
         //     }
         //速度优化
-        spi->write((uint8_t *)data, 512);
+        spi->write_buf((uint8_t *)data, 512);
         //发2个Byte的dummy CRC
         spi->write(0xff);
         spi->write(0xff);
@@ -679,7 +679,7 @@ uint8_t SD::write_multi_block(uint32_t sector,  const uint8_t *data, uint8_t cou
     cs->set();
     spi->write(0xff);
 
-    spi->release_spi_right();
+    spi->release();
 
     return count;   //返回count值，如果写完则count=0，否则count=1
 }
@@ -700,7 +700,7 @@ uint8_t SD::read_bytes(unsigned long address, unsigned char *buf, unsigned int o
     uint8_t r1;
     uint16_t i = 0;
 
-    spi->take_spi_right(&SPIDevSDCard);
+    spi->take(&SPIDevSDCard);
 
     r1 = _send_command(CMD17, address << 9, 1); //发送读扇区命令
     if(r1 != 0x00)return r1; //应答不正确，直接返回
@@ -724,7 +724,7 @@ uint8_t SD::read_bytes(unsigned long address, unsigned char *buf, unsigned int o
     spi->write(0xff);
     cs->set();//关闭SD卡
 
-    spi->release_spi_right();
+    spi->release();
 
 
     return 0;
