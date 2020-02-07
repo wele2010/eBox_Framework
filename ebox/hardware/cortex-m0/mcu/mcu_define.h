@@ -32,8 +32,8 @@ typedef struct
 // 外设 pin 信息
 typedef struct
 {
-    PIN_ID_t	_pinId;		//pin_id
-    PIN_MODE	_pinMode;	//pin 参数， mode，outputtyper,updown
+    PinId_t	_pinId;		//pin_id
+    PinMode_t	_pinMode;	//pin 参数， mode，outputtyper,updown
     uint8_t		_pinAf;		//af功能
     uint32_t	_periph;	//外设名或通道号
 }AF_FUN_S;
@@ -41,7 +41,7 @@ typedef struct
 #if defined(STM32F030x6)
 #include "stm32f030_define.h"
 #elif defined(STM32F030x8)
-#include "stm32f030_define.h"
+#include "stm32f030x8_define.h"
 #elif defined(STM32F072xB)
   #include "stm32f072_define.h"
 #else
@@ -54,7 +54,7 @@ typedef struct
  *@retval   NONE
 */
 //__STATIC_INLINE
-__STATIC_INLINE uint8_t getIndex(PIN_ID_t pin_id, const AF_FUN_S *emap, uint32_t periph)
+__STATIC_INLINE uint8_t getIndex(PinId_t pin_id, const AF_FUN_S *emap, uint32_t periph)
 {
     uint8_t i = 0;
     while (!((0xffffff00 & (emap + i)->_periph) == periph) || !((emap + i)->_pinId == pin_id))
@@ -74,7 +74,7 @@ __STATIC_INLINE uint8_t getIndex(PIN_ID_t pin_id, const AF_FUN_S *emap, uint32_t
  *@retval   NONE
 */
 //__STATIC_INLINE
-__STATIC_INLINE uint8_t getIndex(PIN_ID_t pin_id, const AF_FUN_S *emap)
+__STATIC_INLINE uint8_t getIndex(PinId_t pin_id, const AF_FUN_S *emap)
 {
     uint8_t i = 0;
     while (!((emap + i)->_pinId  == pin_id ))

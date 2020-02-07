@@ -20,9 +20,18 @@
 #ifndef __BSP_EBOX_H
 #define __BSP_EBOX_H
 #include "ebox.h"
+#include "interface/event/EventGpio.h"
+#include "interface/event/EventManager.h"
+#include "lcd_1.8.h"
+#include "graphic.h"
 #include "../Ethernet3/utility/w5500.h"
 
 #define	HARDWARE	"ebox_spark£¬STM32F103C8T6"
+
+
+extern EventGpio btn;
+extern EventManager manager;
+
 extern W5500Class w5500;
 
 #define UART uart1
@@ -32,7 +41,7 @@ extern W5500Class w5500;
 #define I2C  si2c2
 extern void print_log(const char *name = "", const char *date = "");
 
-
+#define Serial UART
 
 #endif
 

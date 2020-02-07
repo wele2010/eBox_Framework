@@ -4,11 +4,16 @@ file   : mmc_sd.cpp
 
 #include "mmc_sd.h"
 
+#include  "ebox.h"
 
-int SD::begin(uint8_t dev_num)
+using namespace ebox;
+
+#define BLOCK_SIZE_HC                            512    /*!< Block size supported for SD card is 512 bytes  */
+const uint32_t SD::_block_size = BLOCK_SIZE_HC;
+
+int SD::_initialise_card()
 {
-    int ret = 0;
-    SPIDevSDCard.dev_num = dev_num;
+    SPIDevSDCard.dev_num = cs->id;
     SPIDevSDCard.mode = Spi::MODE0;
     SPIDevSDCard.prescaler = Spi::DIV2;
     SPIDevSDCard.bit_order = Spi::MSB;
@@ -16,111 +21,9 @@ int SD::begin(uint8_t dev_num)
     cs->mode(OUTPUT_PP);
     cs->set();
     SD_Type = 0;
-
-    ret = init();
-    return ret;
-}
-/*******************************************************************************
-* Function Name  : SD_WaitReady
-* Description    : 等待SD卡Ready
-* Input          : None
-* Output         : None
-* Return         : uint8_t
-*                   0： 成功
-*                   other：失败
-*******************************************************************************/
-
-uint8_t SD::_wait(void)
-{
-    uint8_t r1 = 0;
-    uint32_t retry = 0;
-    do
-    {
-        r1 = spi->read();
-        retry++;
-        if(retry >= 0xfffffffe)
-            return 1;
-    }
-    while(r1 == 0);
     return 0;
 }
-/*******************************************************************************
-* Function Name  : SD_SendCommand
-* Description    : 向SD卡发送一个命令
-* Input          : uint8_t cmd   命令
-*                  uint32_t arg  命令参数
-*                  uint8_t crc   crc校验值
-* Output         : None
-* Return         : uint8_t r1 SD卡返回的响应
-*******************************************************************************/
-uint8_t SD::_send_command(uint8_t cmd, uint32_t arg, uint8_t crc)
-{
-    unsigned char r1 = 0;
-    unsigned int Retry = 0;
 
-
-    cs->set();
-    spi->write(0xff);//提高兼容性，如果没有这里，有些SD卡可能不支持
-    cs->reset();//片选端置低，选中SD卡
-
-    /* 发送命令序列 */
-    spi->write(cmd | 0x40);
-    spi->write((uint8_t)(arg >> 24));//参数[31..24]
-    spi->write((uint8_t)(arg >> 16));//参数[23..16]
-    spi->write((uint8_t)(arg >> 8));//参数[15..8]
-    spi->write((uint8_t)arg);    //参数[7..0]
-    spi->write(crc);
-
-    //等待响应，或超时退出
-    while((r1 = spi->read()) == 0xFF)
-    {
-        Retry++;
-        if(Retry > 800)break; //根据实验测得，最好重试次数多点
-    }
-    //关闭片选
-    cs->set();
-    //在总线上额外增加8个时钟，让SD卡完成剩下的工作
-    spi->write(0xFF);
-
-    //返回状态值
-    return r1;
-}
-/*******************************************************************************
-* Function Name  : SD_SendCommand_NoDeassert
-* Description    : 向SD卡发送一个命令(结束是不失能片选，还有后续数据传来）
-* Input          : uint8_t cmd   命令
-*                  uint32_t arg  命令参数
-*                  uint8_t crc   crc校验值
-* Output         : None
-* Return         : uint8_t r1 SD卡返回的响应
-*******************************************************************************/
-uint8_t SD::_send_command_no_deassert(uint8_t cmd, uint32_t arg, uint8_t crc)
-{
-    unsigned char r1 = 0;
-    unsigned int Retry = 0;
-
-
-    cs->set();
-    spi->write(0xff);//提高兼容性，如果没有这里，有些SD卡可能不支持
-    cs->reset();//片选端置低，选中SD卡
-
-    /* 发送命令序列 */
-    spi->write(cmd | 0x40);
-    spi->write((uint8_t)(arg >> 24));//参数[31..24]
-    spi->write((uint8_t)(arg >> 16));//参数[23..16]
-    spi->write((uint8_t)(arg >> 8));//参数[15..8]
-    spi->write((uint8_t)arg);    //参数[7..0]
-    spi->write(crc);
-
-    //等待响应，或超时退出
-    while((r1 = spi->read()) == 0xFF)
-    {
-        Retry++;
-        if(Retry > 600)break; //根据实验测得，最好重试次数多点
-    }
-    //返回响应值
-    return r1;
-}
 /*******************************************************************************
 * Function Name  : SD_Init
 * Description    : 初始化SD卡
@@ -131,14 +34,21 @@ uint8_t SD::_send_command_no_deassert(uint8_t cmd, uint32_t arg, uint8_t crc)
 *                  1：TIME_OUT
 *                  99：NO_CARD
 *******************************************************************************/
-uint8_t SD::init()
+int SD::init()
 {
     uint16_t i = 0;      // 用来循环计数
     uint8_t r1 = 0;      // 存放SD卡的返回值
     uint16_t retry = 0;  // 用来进行超时计数
     uint8_t buff[6];
+    if(_is_initialized){
+        return 0;
+    }
+        
 
-    SPIDevSDCard.prescaler = Spi::DIV256;
+    _initialise_card();
+    
+    
+    SPIDevSDCard.prescaler = Spi::DIV32;
     spi->begin(&SPIDevSDCard);
     cs->reset();
     // 纯延时，等待SD卡上电完成
@@ -276,6 +186,200 @@ uint8_t SD::init()
 
         // }
     }
+    _is_initialized = true;
+    _get_capacity();
+                
+    uart1.printf("===========sd card==========\r\n");
+    uart1.printf("type       : %s(%d)\r\n",get_type(),SD_Type);
+    uart1.printf("read_size  : %u\r\n",get_read_size());
+    uart1.printf("prog_size  : %u\r\n",get_program_size());
+    uart1.printf("capacity   : %f MByte\r\n",size()/1024/1024.0);
+    uart1.printf("erase_size   : %u Byte\r\n",get_erase_size());
+    uart1.printf("================================\r\n");
+    uart1.flush();
+    return r1;
+}
+
+
+int  SD::deinit()
+{
+//    _is_initialized = false;
+    return 0;
+}
+
+int  SD::read(void *b, bd_addr_t addr, bd_size_t size)
+{
+    if (!is_valid_read(addr, size)) {
+        return -1;
+    }
+    if (!_is_initialized) {
+        
+        return -1;
+    }
+    uart1.flush();
+    uint8_t *buffer = static_cast<uint8_t *>(b);
+
+    size_t blockCnt =  size / _block_size;
+//    if (SDCARD_V2HC == _card_type) {
+        addr = addr / _block_size;
+//    }
+    if (blockCnt > 1) {
+       return read_sector( buffer,addr, blockCnt);
+
+    } else {
+       return read_single_block(addr, buffer);
+    }
+}
+int  SD::program(const void *b, bd_addr_t addr, bd_size_t size)
+{
+    
+    if (!is_valid_read(addr, size)) {
+        return -1;
+    }
+    if (!_is_initialized) {
+        return -1;
+    }
+    uart1.flush();
+    const uint8_t *buffer = static_cast<const uint8_t *>(b);
+    int status = BD_ERROR_OK;
+    uint8_t response;
+
+    // Get block count
+    size_t blockCnt = size / _block_size;
+
+    addr = addr / _block_size;
+    uart1.flush();
+    if (blockCnt > 1) {
+       return  write_sector( buffer,  addr,  blockCnt);
+    }
+    else
+    {
+      return write_single_block(addr, buffer);
+    }
+
+}
+int  SD::erase(bd_addr_t addr, bd_size_t size)
+{
+
+    return 0;
+}
+bd_size_t SD::get_read_size() const
+{
+    return _block_size;
+}
+bd_size_t SD::get_program_size() const
+{
+    return _block_size;
+}
+bd_size_t SD::size() const 
+{
+    return _block_size * _sectors;
+}
+
+const char *SD::get_type() const
+{
+    return "SD";
+}
+
+/*******************************************************************************
+* Function Name  : SD_WaitReady
+* Description    : 等待SD卡Ready
+* Input          : None
+* Output         : None
+* Return         : uint8_t
+*                   0： 成功
+*                   other：失败
+*******************************************************************************/
+
+uint8_t SD::_wait(void)
+{
+    uint8_t r1 = 0;
+    uint32_t retry = 0;
+    do
+    {
+        r1 = spi->read();
+        retry++;
+        if(retry >= 0xfffffffe)
+            return 1;
+    }
+    while(r1 == 0);
+    return 0;
+}
+/*******************************************************************************
+* Function Name  : SD_SendCommand
+* Description    : 向SD卡发送一个命令
+* Input          : uint8_t cmd   命令
+*                  uint32_t arg  命令参数
+*                  uint8_t crc   crc校验值
+* Output         : None
+* Return         : uint8_t r1 SD卡返回的响应
+*******************************************************************************/
+uint8_t SD::_send_command(uint8_t cmd, uint32_t arg, uint8_t crc)
+{
+    unsigned char r1 = 0;
+    unsigned int Retry = 0;
+
+
+    cs->set();
+    spi->write(0xff);//提高兼容性，如果没有这里，有些SD卡可能不支持
+    cs->reset();//片选端置低，选中SD卡
+
+    /* 发送命令序列 */
+    spi->write(cmd | 0x40);
+    spi->write((uint8_t)(arg >> 24));//参数[31..24]
+    spi->write((uint8_t)(arg >> 16));//参数[23..16]
+    spi->write((uint8_t)(arg >> 8));//参数[15..8]
+    spi->write((uint8_t)arg);    //参数[7..0]
+    spi->write(crc);
+
+    //等待响应，或超时退出
+    while((r1 = spi->read()) == 0xFF)
+    {
+        Retry++;
+        if(Retry > 800)break; //根据实验测得，最好重试次数多点
+    }
+    //关闭片选
+    cs->set();
+    //在总线上额外增加8个时钟，让SD卡完成剩下的工作
+    spi->write(0xFF);
+
+    //返回状态值
+    return r1;
+}
+/*******************************************************************************
+* Function Name  : SD_SendCommand_NoDeassert
+* Description    : 向SD卡发送一个命令(结束是不失能片选，还有后续数据传来）
+* Input          : uint8_t cmd   命令
+*                  uint32_t arg  命令参数
+*                  uint8_t crc   crc校验值
+* Output         : None
+* Return         : uint8_t r1 SD卡返回的响应
+*******************************************************************************/
+uint8_t SD::_send_command_no_deassert(uint8_t cmd, uint32_t arg, uint8_t crc)
+{
+    unsigned char r1 = 0;
+    unsigned int Retry = 0;
+
+
+    cs->set();
+    spi->write(0xff);//提高兼容性，如果没有这里，有些SD卡可能不支持
+    cs->reset();//片选端置低，选中SD卡
+
+    /* 发送命令序列 */
+    spi->write(cmd | 0x40);
+    spi->write((uint8_t)(arg >> 24));//参数[31..24]
+    spi->write((uint8_t)(arg >> 16));//参数[23..16]
+    spi->write((uint8_t)(arg >> 8));//参数[15..8]
+    spi->write((uint8_t)arg);    //参数[7..0]
+    spi->write(crc);
+
+    //等待响应，或超时退出
+    while((r1 = spi->read()) == 0xFF)
+    {
+        Retry++;
+        if(Retry > 600)break; //根据实验测得，最好重试次数多点
+    }
+    //返回响应值
     return r1;
 }
 /*******************************************************************************
@@ -385,14 +489,14 @@ int SD::get_CSD(uint8_t *csd_data)
 * Return         : uint32_t capacity
 *                   0： 取容量出错
 *******************************************************************************/
-uint64_t SD::get_capacity(void)
+ebox::bd_size_t SD::_get_capacity(void)
 {
     uint8_t csd[16];
     uint64_t Capacity;
     uint8_t r1;
     uint16_t i;
     uint16_t temp;
-    spi->take(&SPIDevSDCard);
+//    spi->take(&SPIDevSDCard);
 
     //取CSD信息，如果期间出错，返回0
     if(get_CSD(csd) != 0) return 0;
@@ -436,11 +540,16 @@ uint64_t SD::get_capacity(void)
         //The final result
         Capacity *= (uint32_t)temp;//字节为单位
     }
+    _sectors = Capacity / 512;
 
-    spi->release();
-
+//    spi->release();
+    ebox_printf("Capacity:%u",Capacity);
+    ebox_printf("sector:%u",_sectors);
     return (uint64_t)Capacity;
 }
+
+
+
 /*******************************************************************************
 * Function Name  : SD_ReadSingleBlock
 * Description    : 读SD卡的一个block
@@ -451,7 +560,7 @@ uint64_t SD::get_capacity(void)
 *                   0： 成功
 *                   other：失败
 *******************************************************************************/
-uint8_t SD::read_single_block(uint32_t sector, uint8_t *buffer)
+uint8_t SD::read_single_block(uint64_t sector, uint8_t *buffer)
 {
     uint8_t r1;
 
@@ -485,7 +594,7 @@ uint8_t SD::read_single_block(uint32_t sector, uint8_t *buffer)
 *                   0： 成功
 *                   other：失败
 *******************************************************************************/
-uint8_t SD::write_single_block(uint32_t sector, const  uint8_t *data)
+uint8_t SD::write_single_block(uint64_t sector, const  uint8_t *data)
 {
     uint8_t r1;
     //  uint16_t i;
@@ -566,7 +675,7 @@ uint8_t SD::write_single_block(uint32_t sector, const  uint8_t *data)
 *                   0： 成功
 *                   other：失败
 *******************************************************************************/
-uint8_t SD::read_multi_block(uint32_t sector, uint8_t *buffer, uint8_t count)
+int SD::read_sector( uint8_t *buffer,uint32_t sector, uint8_t count)
 {
     uint8_t r1;
 
@@ -612,7 +721,7 @@ uint8_t SD::read_multi_block(uint32_t sector, uint8_t *buffer, uint8_t count)
 *                   0： 成功
 *                   other：失败
 *******************************************************************************/
-uint8_t SD::write_multi_block(uint32_t sector,  const uint8_t *data, uint8_t count)
+int SD::write_sector( const uint8_t *data, uint32_t sector,  uint8_t count)
 {
     uint8_t r1;
     //  uint16_t i;

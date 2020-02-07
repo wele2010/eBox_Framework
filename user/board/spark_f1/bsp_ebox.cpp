@@ -21,7 +21,13 @@
 #include "bsp_ebox.h"
 #include "ebox_mem.h"
 
+
+
 W5500Class w5500(&PC13, &PC14, &PC15, &spi2);
+
+
+EventGpio btn(&PA8, 1,"btn1");
+EventManager manager;
 
 /*
 *********************************************************************************************************
@@ -31,6 +37,10 @@ W5500Class w5500(&PC13, &PC14, &PC15, &spi2);
 *	返 回 值: 无
 *********************************************************************************************************
 */
+void print_log()
+{
+    print_log("TEST","2019-12-02");
+}
 void print_log(const char *name, const char *date)
 {
     UART.print("\n\r");
@@ -117,6 +127,7 @@ void print_log(const char *name, const char *date)
 
     UART.print("* \r\n");	                /* 打印一行空格 */
     UART.print("*************************************************************\n\r");
+    UART.flush();
 }
 
 
